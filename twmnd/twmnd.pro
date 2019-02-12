@@ -5,7 +5,6 @@
 #-------------------------------------------------
 
 QT       += core gui network widgets dbus
-DEFINES += QT_NO_DEBUG_OUTPUT
 TARGET = twmnd
 TEMPLATE = app
 CONFIG += debug

@@ -54,21 +54,21 @@ void DBusInterface::Notify(
 
     Message msg;
     if (!body.isEmpty())
-        msg.data["content"] = Message::Data(body);
+        msg.data["content"] = body;
     if (!summary.isEmpty())
-        msg.data[(msg.data["content"] ? "title" : "content")] = Message::Data(summary);
+        msg.data[(msg.data["content"].isValid() ? "title" : "content")] = summary;
     if (!icon.isEmpty())
-        msg.data["icon"] = Message::Data(icon);
+        msg.data["icon"] = icon;
     if (timeout != -1)
-        msg.data["duration"] = Message::Data(timeout);
-    msg.data["id"] = Message::Data(id ? id : ++lastNid);
+        msg.data["duration"] = timeout;
+    msg.data["id"] = id ? id : ++lastNid;
 
-    if (msg.data["content"])
+    if (msg.data["content"].isValid())
     {
         emit messageReceived(msg);
     }
 
     // reply
-    return_id = msg.data["id"]->toInt();
+    return_id = msg.data["id"].toInt();
 }
 

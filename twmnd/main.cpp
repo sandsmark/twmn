@@ -14,37 +14,9 @@
 #define VERSION "1.2"
 #endif
 
-void logOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
-{
-#ifdef QT_NO_DEBUG_OUTPUT
-    Q_UNUSED(type);
-    Q_UNUSED(msg);
-    Q_UNUSED(context);
-    return;
-#else
-    std::cout << "[" << QTime::currentTime().toString("hh:mm:ss").toStdString() << "]";
-    switch (type){
-    case QtDebugMsg:
-        std::cout << " " << msg;
-        break;
-    case QtWarningMsg:
-        std::cout << "[warning][" << context.file << '-' << context.line << "] " << msg.toStdString();
-        break;
-    case QtCriticalMsg:
-        std::cout << "[critical][" << context.file << '-' << context.line << "] " << msg.toStdString();
-        break;
-    case QtFatalMsg:
-        std::cout << "[fatal][" << context.file << '-' << context.line << "] " <<  msg.toStdString();
-        break;
-    }
-    std::cout << std::endl;
-#endif
-}
-
 int main(int argc, char *argv[])
 {
     std::cout << "Starting twmnd version " << VERSION << std::endl;
-    qInstallMessageHandler(logOutput);
     QApplication a(argc, argv);
     QApplication::setQuitOnLastWindowClosed(true);
     QApplication::setApplicationName("twmn");

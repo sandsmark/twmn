@@ -1,8 +1,6 @@
 #include "widget.h"
 #include <exception>
 #include <iostream>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/xml_parser.hpp>
 #include <QApplication>
 #include <QFileInfo>
 #include <QDir>
@@ -19,6 +17,7 @@
 #include <QWheelEvent>
 #include <QCursor>
 #include <QtX11Extras/QX11Info>
+#include <QXmlStreamReader>
 #include "settings.h"
 
 Widget::Widget(const char* wname) : m_settings(wname)//, m_shortcutGrabber(this, m_settings)
@@ -73,29 +72,33 @@ void Widget::init()
 
 void Widget::onDataReceived()
 {
-    boost::property_tree::ptree tree;
     Message m;
-    try {
-        quint64 size = m_socket.pendingDatagramSize();
-        QByteArray data(size, '\0');
-        m_socket.readDatagram(data.data(), size);
-        std::istringstream iss (data.data());
-        boost::property_tree::xml_parser::read_xml(iss, tree);
-        boost::property_tree::ptree& root = tree.get_child("root");
-        boost::property_tree::ptree::iterator it;
-        for (it = root.begin(); it != root.end(); ++it) {
-            std::cout << it->first << " - " << it->second.get_value<std::string>() << std::endl;
-            m.data[QString::fromStdString(it->first)] = boost::optional<QVariant>(it->second.get_value<std::string>().c_str());
+
+    quint64 size = m_socket.pendingDatagramSize();
+    QByteArray data(size, '\0');
+    m_socket.readDatagram(data.data(), size);
+    QXmlStreamReader reader(data);
+    qDebug() << data;
+
+    do {
+        if (reader.name() == "root") {
+            break;
         }
+    } while (reader.readNextStartElement());
+
+    if (!reader.isStartElement() || reader.name() != "root") {
+        qWarning() << "Invalid XML received" << data;
+        return;
     }
-    catch (const std::exception& e) {
-        std::cout << "ERROR : " << e.what() << std::endl;
+    while (reader.readNextStartElement() && !reader.hasError()) {
+        m.data[reader.name().toString()] = reader.readElementText();
     }
-    if (m.data.contains("remote") && m.data["remote"]) { // a remote control action
-        processRemoteControl(qvariant_cast<QString>(m.data["remote"].get()));
-    }
-    else // A notification
+
+    if (m.data.contains("remote")) { // a remote control action
+        processRemoteControl(m.data["remote"].toString());
+    } else { // A notification
         appendMessageToQueue(m);
+    }
 }
 
 void Widget::processRemoteControl(QString command)
@@ -112,7 +115,7 @@ void Widget::processRemoteControl(QString command)
 
 void Widget::appendMessageToQueue(const Message& msg)
 {
-    if (msg.data["id"] && !m_messageQueue.isEmpty()) {
+    if (msg.data["id"].isValid() && !m_messageQueue.isEmpty()) {
         if (update(msg))
             return;
     }
@@ -137,7 +140,7 @@ void Widget::processMessageQueue()
     boldFont.setBold(true);
     Message& m = m_messageQueue.front();
     loadDefaults();
-    if (m.data["aot"]->toBool()) {
+    if (m.data["aot"].toBool()) {
         setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint | Qt::X11BypassWindowManagerHint);
         raise();
     }
@@ -146,14 +149,14 @@ void Widget::processMessageQueue()
     setupIcon();
     setupTitle();
     setupContent();
-    connectForPosition(m.data["pos"]->toString());
+    connectForPosition(m.data["pos"].toString());
     m_animation.setDirection(QAnimationGroup::Forward);
     int width = computeWidth();
     qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0))->setEasingCurve(QEasingCurve::Type(m_settings.get("gui/in_animation").toInt()));
     qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0))->setStartValue(0);
     qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0))->setEndValue(width);
     m_animation.start();
-    QString soundCommand = m.data["sc"]->toString();
+    QString soundCommand = m.data["sc"].toString();
     if (!soundCommand.isEmpty())
         QProcess::startDetached(soundCommand);
    // m_shortcutGrabber.enableShortcuts();
@@ -344,7 +347,7 @@ void Widget::startBounce()
     anim->setDuration(m_settings.get("gui/bounce_duration").toInt() * 0.25f);
     anim->setStartValue(0);
 
-    QString position = m_messageQueue.front().data["pos"]->toString();
+    QString position = m_messageQueue.front().data["pos"].toString();
     if (position == "top_center" || position == "tc" ||
         position == "bottom_center" || position == "bc" ||
         position == "center" || position == "c")
@@ -396,7 +399,7 @@ void Widget::updateBounceAnimation(QVariant value)
         return;
     }
 
-    QString position = m_messageQueue.front().data["pos"]->toString();
+    QString position = m_messageQueue.front().data["pos"].toString();
     if (position == "top_left" || position == "tl" ||
         position == "bottom_left" || position == "bl")
         move(tmpBouncePos.x() + value.toInt(), tmpBouncePos.y());
@@ -422,7 +425,7 @@ void Widget::reverseTrigger()
     }
 
     const bool bounce  = m_settings.get("gui/bounce").toBool();
-    const int duration = m_messageQueue.front().data["duration"]->toInt();
+    const int duration = m_messageQueue.front().data["duration"].toInt();
 
     const unsigned int minDuration = m_settings.get("gui/bounce_duration").toInt() + 10;
 
@@ -466,14 +469,14 @@ void Widget::reverseStart()
             return;
         }
 
-        disconnect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.c_str());
+        disconnect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.constData());
 
         anim->setDirection(QAnimationGroup::Backward);
         anim->setEasingCurve(QEasingCurve::Type(m_settings.get("gui/out_animation").toInt()));
         anim->setDuration(duration);
         anim->setCurrentTime(duration);
 
-        connect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.c_str());
+        connect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.constData());
 
         anim->start();
         //m_shortcutGrabber.disableShortcuts();
@@ -501,7 +504,7 @@ int Widget::computeWidth()
     }
     else
         width += QFontMetrics(font()).width(text);
-    if (m.data["icon"])
+    if (m.data["icon"].isValid())
         width += m_contentView["icon"]->pixmap()->width();
     return width;
 }
@@ -510,15 +513,15 @@ void Widget::setupFont()
 {
     Message& m = m_messageQueue.front();
     QFont font;
-    QString name = m.data["fn"]->toString();
+    QString name = m.data["fn"].toString();
     // Trick to detect a font in XFD format.
     if (name.count('-') >= 4)
         font.setRawName(name);
     else {
-        font.setPixelSize(m.data["fs"]->toInt());
+        font.setPixelSize(m.data["fs"].toInt());
         font.setFamily(name);
     }
-    QString ss( m.data["fv"]->toString() );
+    QString ss( m.data["fv"].toString() );
     if (ss == "oblique")
 		font.setStyle( QFont::StyleOblique );
 	else if (ss == "italic")
@@ -559,8 +562,8 @@ void Widget::setupFont()
 void Widget::setupColors()
 {
     Message& m = m_messageQueue.front();
-    QString bg = m.data["bg"]->toString();
-    QString fg = m.data["fg"]->toString();
+    QString bg = m.data["bg"].toString();
+    QString fg = m.data["fg"].toString();
     QString sheet;
     if (!bg.isEmpty())
         sheet += QString("background-color: %1;").arg(bg);
@@ -616,24 +619,24 @@ void Widget::connectForPosition(QString position)
         m_activePositionSlot = SLOT(updateTopRightAnimation(QVariant));
     }
 
-    connect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.c_str());
+    connect(anim, SIGNAL(valueChanged(QVariant)), this, m_activePositionSlot.constData());
 }
 
 void Widget::setupIcon()
 {
     Message& m = m_messageQueue.front();
     bool done = true;
-    if (m.data["icon"]) {
-        QPixmap pix = qvariant_cast<QPixmap>(*m.data["icon"]);
+    if (m.data["icon"].isValid()) {
+        QPixmap pix = qvariant_cast<QPixmap>(m.data["icon"]);
         if (pix.isNull())
-            pix = loadPixmap(m.data["icon"]->toString());
+            pix = loadPixmap(m.data["icon"].toString());
         if (!pix.isNull())
-            m.data["icon"].reset(pix);
+            m.data["icon"] = pix;
         else if (pix.isNull())
             done = false;
-        if (pix.height() > m.data["size"]->toInt())
-            pix = pix.scaled(m.data["size"]->toInt()-2, m.data["size"]->toInt()-2, Qt::KeepAspectRatio);
-        m.data["icon"].reset(pix);
+        if (pix.height() > m.data["size"].toInt())
+            pix = pix.scaled(m.data["size"].toInt()-2, m.data["size"].toInt()-2, Qt::KeepAspectRatio);
+        m.data["icon"] = pix;
         m_contentView["icon"]->setPixmap(pix);
         m_contentView["icon"]->setMaximumWidth(9999);
     }
@@ -648,8 +651,8 @@ void Widget::setupTitle()
     QFont boldFont = font();
     boldFont.setBold(true);
     Message& m = m_messageQueue.front();
-    if (m.data["title"]) {              // avoid ugly space if no icon is set
-        QString text = (m.data["icon"] ? " " : "") + m.data["title"]->toString() + " ";
+    if (m.data["title"].isValid()) {              // avoid ugly space if no icon is set
+        QString text = (m.data["icon"].isValid() ? " " : "") + m.data["title"].toString() + " ";
         foreach (QString i, QStringList() << "\n" << "\r" << "<br/>" << "<br />")
             text.replace(i, " ");
 
@@ -666,8 +669,8 @@ void Widget::setupTitle()
 void Widget::setupContent()
 {
     Message& m = m_messageQueue.front();
-    if (m.data["content"]) {
-        QString text = (m.data["icon"] && !m.data["title"] ? " " : "") + m.data["content"]->toString() + " ";
+    if (m.data["content"].isValid()) {
+        QString text = (m.data["icon"].isValid() && !m.data["title"].isValid() ? " " : "") + m.data["content"].toString() + " ";
         foreach (QString i, QStringList() << "\n" << "\r" << "<br/>" << "<br />")
             text.replace(i, " ");
         int max_length = m_settings.get("gui/max_length").toInt();
@@ -689,40 +692,40 @@ void Widget::loadDefaults()
     // "content" << "icon" << "title" << "layout" << "size" << "pos" << "fn" << "fs" << "duration" < "sc" << "bg" << "fg";
     Message& m = m_messageQueue.front();
     Settings* s = &m_settings;
-    if (m.data["layout"]) {
-        QString name = m.data["layout"]->toString();
+    if (m.data["layout"].isValid()) {
+        QString name = m.data["layout"].toString();
         name.remove(".conf");
         s = new Settings(name);
         s->fillWith(m_settings);
         qDebug() << "Layout loaded : " << name;
         qDebug() << s->get("gui/foreground_color");
     }
-    if (!m.data["bg"])
-        m.data["bg"] = boost::optional<QVariant>(s->get("gui/background_color"));
-    if (!m.data["fg"])
-        m.data["fg"] = boost::optional<QVariant>(s->get("gui/foreground_color"));
-    if (!m.data["sc"])
-        m.data["sc"] = boost::optional<QVariant>(s->get("main/sound_command"));
-    if (!m.data["duration"])
-        m.data["duration"] = boost::optional<QVariant>(s->get("main/duration"));
-    if (!m.data["fs"])
-        m.data["fs"] = boost::optional<QVariant>(s->get("gui/font_size"));
-    if (!m.data["fn"])
-        m.data["fn"] = boost::optional<QVariant>(s->get("gui/font"));
-    if (!m.data["fv"])
-        m.data["fv"] = boost::optional<QVariant>(s->get("gui/font_variant"));
-    if (!m.data["pos"])
-        m.data["pos"] = boost::optional<QVariant>(s->get("gui/position"));
-    if (!m.data["size"])
-        m.data["size"] = boost::optional<QVariant>(s->get("gui/height"));
-    if (!m.data["icon"])
+    if (!m.data["bg"].isValid())
+        m.data["bg"] = s->get("gui/background_color");
+    if (!m.data["fg"].isValid())
+        m.data["fg"] = s->get("gui/foreground_color");
+    if (!m.data["sc"].isValid())
+        m.data["sc"] = s->get("main/sound_command");
+    if (!m.data["duration"].isValid())
+        m.data["duration"] = s->get("main/duration");
+    if (!m.data["fs"].isValid())
+        m.data["fs"] = s->get("gui/font_size");
+    if (!m.data["fn"].isValid())
+        m.data["fn"] = s->get("gui/font");
+    if (!m.data["fv"].isValid())
+        m.data["fv"] = s->get("gui/font_variant");
+    if (!m.data["pos"].isValid())
+        m.data["pos"] = s->get("gui/position");
+    if (!m.data["size"].isValid())
+        m.data["size"] = s->get("gui/height");
+    if (!m.data["icon"].isValid())
         m.data["icon"] = loadPixmap(s->has("gui/icon") ? s->get("gui/icon").toString() : "");
-    if (!m.data["aot"])
-        m.data["aot"] = boost::optional<QVariant>(s->get("gui/always_on_top"));
-    if (!m.data["ac"])
-        m.data["ac"] = boost::optional<QVariant>(s->get("main/activate_command"));
-    if (!m.data["bounce"])
-        m.data["bounce"] = boost::optional<QVariant>(s->get("gui/bounce"));
+    if (!m.data["aot"].isValid())
+        m.data["aot"] = s->get("gui/always_on_top");
+    if (!m.data["ac"].isValid())
+        m.data["ac"] = s->get("main/activate_command");
+    if (!m.data["bounce"].isValid())
+        m.data["bounce"] = s->get("gui/bounce");
     if (s != &m_settings)
         delete s;
 }
@@ -753,14 +756,14 @@ bool Widget::update(const Message &m)
 {
     bool found = false;
     for (QQueue<Message>::iterator it = m_messageQueue.begin(); it != m_messageQueue.end(); ++it) {
-        if (it->data["id"] && it->data["id"]->toInt() == m.data["id"]->toInt()) {
+        if (it->data["id"].isValid() && it->data["id"].toInt() == m.data["id"].toInt()) {
             it->data = m.data;
             found = true;
             break;
         }
     }
-    if (found && !m_messageQueue.isEmpty() && m_messageQueue.front().data["id"]
-        && m_messageQueue.front().data["id"]->toInt() == m.data["id"]->toInt()) {
+    if (found && !m_messageQueue.isEmpty() && m_messageQueue.front().data["id"].isValid()
+        && m_messageQueue.front().data["id"].toInt() == m.data["id"].toInt()) {
         loadDefaults();
         setupFont();
         setupColors();
@@ -768,7 +771,7 @@ bool Widget::update(const Message &m)
         setupTitle();
         setupContent();
         updateFinalWidth();
-        connectForPosition(m_messageQueue.front().data["pos"]->toString());
+        connectForPosition(m_messageQueue.front().data["pos"].toString());
         m_visible.start();
     }
     return found;
@@ -798,7 +801,7 @@ void Widget::updateFinalWidth()
         return;
     }
 
-    QString position = m_messageQueue.front().data["pos"]->toString();
+    QString position = m_messageQueue.front().data["pos"].toString();
     int width = computeWidth();
 
     qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0))->setEndValue(width);
@@ -831,7 +834,7 @@ void Widget::onPrevious()
     setupIcon();
     setupTitle();
     setupContent();
-    connectForPosition(m_messageQueue.front().data["pos"]->toString());
+    connectForPosition(m_messageQueue.front().data["pos"].toString());
     updateFinalWidth();
 }
 
@@ -841,8 +844,8 @@ void Widget::onNext()
     if (m_messageQueue.size() < 2)
         return;
     Message m = m_messageQueue.front();
-    boost::optional<QVariant> tmpManual = m.data["manually_shown"];
-    m.data["manually_shown"] = boost::optional<QVariant>(true);
+    QVariant tmpManual = m.data["manually_shown"];
+    m.data["manually_shown"] = true;
     m_previousStack.push(m);
     m_messageQueue.pop_front();
     loadDefaults();
@@ -851,17 +854,17 @@ void Widget::onNext()
     setupIcon();
     setupTitle();
     setupContent();
-    connectForPosition(m_messageQueue.front().data["pos"]->toString());
+    connectForPosition(m_messageQueue.front().data["pos"].toString());
     updateFinalWidth();
-    if (m_messageQueue.front().data["bounce"] && !tmpManual)
+    if (m_messageQueue.front().data["bounce"].isValid() && !tmpManual.isValid())
         startBounce();
 }
 
 void Widget::onActivate()
 {
     if (!m_messageQueue.isEmpty()) {
-        if (m_messageQueue.front().data.contains("ac") && m_messageQueue.front().data["ac"]) {
-            QProcess::startDetached(m_messageQueue.front().data["ac"]->toString());
+        if (m_messageQueue.front().data.contains("ac") && m_messageQueue.front().data["ac"].isValid()) {
+            QProcess::startDetached(m_messageQueue.front().data["ac"].toString());
             m_messageQueue.front().data["ac"] = "";
         }
     }
@@ -885,13 +888,13 @@ void Widget::autoNext()
     Q_ASSERT (m_messageQueue.size() >= 2);
     Message&m = m_messageQueue.front();
     // The user already saw it manually.
-    if (m.data["manually_shown"]) {
+    if (m.data["manually_shown"].isValid()) {
         m_messageQueue.pop_front();
         reverseStart();
     }
     else {
-        if ((m_messageQueue.begin()+1)->data["sc"])
-            QProcess::startDetached((m_messageQueue.begin()+1)->data["sc"]->toString());
+        if ((m_messageQueue.begin()+1)->data["sc"].isValid())
+            QProcess::startDetached((m_messageQueue.begin()+1)->data["sc"].toString());
     }
     onNext();
 }
@@ -917,7 +920,7 @@ std::size_t Widget::getHeight()
     QPropertyAnimation* anim = qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0));
     if(anim->direction() == QAbstractAnimation::Forward
             && !m_messageQueue.empty()) {
-        return m_messageQueue.front().data["size"]->toInt();
+        return m_messageQueue.front().data["size"].toInt();
     } else {
         return height();
     }
