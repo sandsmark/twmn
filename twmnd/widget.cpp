@@ -29,9 +29,9 @@ Widget::Widget(const char* wname) : m_settings(wname)//, m_shortcutGrabber(this,
     anim->setTargetObject(this);
     m_animation.addAnimation(anim);
     anim->setEasingCurve(QEasingCurve::Type(m_settings.get("gui/in_animation").toInt()));
-    connect(anim, SIGNAL(finished()), this, SLOT(reverseTrigger()));
+    connect(anim, &QAbstractAnimation::finished, this, &Widget::reverseTrigger);
     connectForPosition(m_settings.get("gui/position").toString());
-    connect(&m_visible, SIGNAL(timeout()), this, SLOT(reverseStart()));
+    connect(&m_visible, &QTimer::timeout, this, &Widget::reverseStart);
     m_visible.setSingleShot(true);
     QHBoxLayout* l = new QHBoxLayout;
     l->setSizeConstraint(QLayout::SetNoConstraint);
@@ -44,7 +44,7 @@ Widget::Widget(const char* wname) : m_settings(wname)//, m_shortcutGrabber(this,
     m_contentView["title"]->setOpenExternalLinks(true);
     m_contentView["text"]->setOpenExternalLinks(true);
     setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(this, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(onHide()));
+    connect(this, &QWidget::customContextMenuRequested, this, &Widget::onHide);
     // Let the event loop run
     QTimer::singleShot(30, this, SLOT(init()));
 }
@@ -55,7 +55,7 @@ Widget::~Widget()
 
 void Widget::connectToDBus(const DBusInterface& dbus)
 {
-    connect(&dbus, SIGNAL(messageReceived(Message)), this, SLOT(appendMessageToQueue(Message)));
+    connect(&dbus, &DBusInterface::messageReceived, this, &Widget::appendMessageToQueue);
 }
 
 void Widget::init()
@@ -66,7 +66,7 @@ void Widget::init()
         qCritical() << "Unable to listen port" << port;
         return;
     }
-    connect(&m_socket, SIGNAL(readyRead()), this, SLOT(onDataReceived()));
+    connect(&m_socket, &QIODevice::readyRead, this, &Widget::onDataReceived);
    // m_shortcutGrabber.loadShortcuts();
 }
 
@@ -78,7 +78,6 @@ void Widget::onDataReceived()
     QByteArray data(size, '\0');
     m_socket.readDatagram(data.data(), size);
     QXmlStreamReader reader(data);
-    qDebug() << data;
 
     do {
         if (reader.name() == "root") {
@@ -359,8 +358,8 @@ void Widget::startBounce()
 
     anim->start();
 
-    connect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateBounceAnimation(QVariant)));
-    connect(anim, SIGNAL(finished()), this, SLOT(unbounce()));
+    connect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateBounceAnimation);
+    connect(anim, &QAbstractAnimation::finished, this, &Widget::unbounce);
 }
 
 void Widget::unbounce()
@@ -368,8 +367,8 @@ void Widget::unbounce()
     QPropertyAnimation* anim = qobject_cast<QPropertyAnimation*>(m_animation.animationAt(1));
     if (!anim)
         return;
-    disconnect(anim, SIGNAL(finished()), this, SLOT(unbounce()));
-    connect(anim, SIGNAL(finished()), this, SLOT(doneBounce()));
+    disconnect(anim, &QAbstractAnimation::finished, this, &Widget::unbounce);
+    connect(anim, &QAbstractAnimation::finished, this, &Widget::doneBounce);
     anim->setDirection(QAnimationGroup::Backward);
     anim->setEasingCurve(QEasingCurve::InBounce);
     anim->setDuration(m_settings.get("gui/bounce_duration").toInt() * 0.75f);
@@ -385,9 +384,9 @@ void Widget::doneBounce()
         return;
     }
 
-    disconnect(anim, SIGNAL(finished()), this, SLOT(unbounce()));
-    disconnect(anim, SIGNAL(finished()), this, SLOT(doneBounce()));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateBounceAnimation(QVariant)));
+    disconnect(anim, &QAbstractAnimation::finished, this, &Widget::unbounce);
+    disconnect(anim, &QAbstractAnimation::finished, this, &Widget::doneBounce);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateBounceAnimation);
 
     m_animation.removeAnimation(anim);
 }
@@ -523,39 +522,39 @@ void Widget::setupFont()
     }
     QString ss( m.data["fv"].toString() );
     if (ss == "oblique")
-		font.setStyle( QFont::StyleOblique );
-	else if (ss == "italic")
-		font.setStyle( QFont::StyleItalic );
-	else if (ss == "ultra-light")
-		font.setWeight( 13 );
-	else if (ss == "light")
-		font.setWeight( QFont::Light );
-	else if (ss == "medium")
-		font.setWeight( 50 );
-	else if (ss == "semi-bold")
-		font.setWeight( QFont::DemiBold );
-	else if (ss == "bold")
-		font.setWeight( QFont::Bold );
-	else if (ss == "ultra-bold")
-		font.setWeight( QFont::Black );
-	else if (ss == "heavy")
-		font.setWeight( 99 );
-	else if (ss == "ultra-condensed")
-		font.setStretch( QFont::UltraCondensed );
-	else if (ss == "extra-condensed")
-		font.setStretch( QFont::ExtraCondensed );
-	else if (ss == "condensed")
-		font.setStretch( QFont::Condensed );
-	else if (ss == "semi-condensed")
-		font.setStretch( QFont::SemiCondensed );
-	else if (ss == "semi-expanded")
-		font.setStretch( QFont::SemiExpanded );
-	else if (ss == "expanded")
-		font.setStretch( QFont::Expanded );
-	else if (ss == "extra-expanded")
-		font.setStretch( QFont::ExtraExpanded );
-	else if (ss == "ultra-expanded")
-		font.setStretch( QFont::UltraExpanded );
+        font.setStyle( QFont::StyleOblique );
+    else if (ss == "italic")
+        font.setStyle( QFont::StyleItalic );
+    else if (ss == "ultra-light")
+        font.setWeight( 13 );
+    else if (ss == "light")
+        font.setWeight( QFont::Light );
+    else if (ss == "medium")
+        font.setWeight( 50 );
+    else if (ss == "semi-bold")
+        font.setWeight( QFont::DemiBold );
+    else if (ss == "bold")
+        font.setWeight( QFont::Bold );
+    else if (ss == "ultra-bold")
+        font.setWeight( QFont::Black );
+    else if (ss == "heavy")
+        font.setWeight( 99 );
+    else if (ss == "ultra-condensed")
+        font.setStretch( QFont::UltraCondensed );
+    else if (ss == "extra-condensed")
+        font.setStretch( QFont::ExtraCondensed );
+    else if (ss == "condensed")
+        font.setStretch( QFont::Condensed );
+    else if (ss == "semi-condensed")
+        font.setStretch( QFont::SemiCondensed );
+    else if (ss == "semi-expanded")
+        font.setStretch( QFont::SemiExpanded );
+    else if (ss == "expanded")
+        font.setStretch( QFont::Expanded );
+    else if (ss == "extra-expanded")
+        font.setStretch( QFont::ExtraExpanded );
+    else if (ss == "ultra-expanded")
+        font.setStretch( QFont::UltraExpanded );
     QApplication::setFont(font);
 }
 
@@ -582,13 +581,13 @@ void Widget::connectForPosition(QString position)
         duration = 30;
     if (anim->duration() != duration)
         anim->setDuration(duration);
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateTopLeftAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateTopRightAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateBottomRightAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateBottomLeftAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateTopCenterAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateBottomCenterAnimation(QVariant)));
-    disconnect(anim, SIGNAL(valueChanged(QVariant)), this, SLOT(updateCenterAnimation(QVariant)));
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateTopLeftAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateTopRightAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateBottomRightAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateBottomLeftAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateTopCenterAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateBottomCenterAnimation);
+    disconnect(anim, &QVariantAnimation::valueChanged, this, &Widget::updateCenterAnimation);
 
     if (position == "top_left" || position == "tl") {
         m_activePositionSlot = SLOT(updateTopLeftAnimation(QVariant));
