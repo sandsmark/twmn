@@ -156,8 +156,8 @@ void Widget::processMessageQueue()
     qobject_cast<QPropertyAnimation*>(m_animation.animationAt(0))->setEndValue(width);
     m_animation.start();
     QString soundCommand = m.data["sc"].toString();
-    if (!soundCommand.isEmpty())
-        QProcess::startDetached(soundCommand);
+//    if (!soundCommand.isEmpty())
+//        QProcess::startDetached(soundCommand);
    // m_shortcutGrabber.enableShortcuts();
 }
 
@@ -863,7 +863,7 @@ void Widget::onActivate()
 {
     if (!m_messageQueue.isEmpty()) {
         if (m_messageQueue.front().data.contains("ac") && m_messageQueue.front().data["ac"].isValid()) {
-            QProcess::startDetached(m_messageQueue.front().data["ac"].toString());
+//            QProcess::startDetached(m_messageQueue.front().data["ac"].toString());
             m_messageQueue.front().data["ac"] = "";
         }
     }
@@ -892,8 +892,8 @@ void Widget::autoNext()
         reverseStart();
     }
     else {
-        if ((m_messageQueue.begin()+1)->data["sc"].isValid())
-            QProcess::startDetached((m_messageQueue.begin()+1)->data["sc"].toString());
+//        if ((m_messageQueue.begin()+1)->data["sc"].isValid())
+//            QProcess::startDetached((m_messageQueue.begin()+1)->data["sc"].toString());
     }
     onNext();
 }
